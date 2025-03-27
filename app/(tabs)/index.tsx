@@ -5,37 +5,86 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  Pressable,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import SplashScreen from "../../components/SplashScreen";
+import { saveBuddyState } from "../../services/buddyService";
+import { useBuddyState } from "../../hooks/useBuddyState";
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [buddyName, setBuddyName] = useState<string>("");
   const [selectedEmoji, setSelectedEmoji] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState<boolean>(false);
+  const { buddyState, isLoading: isBuddyLoading } = useBuddyState();
 
   // Emoji options
   const emojiOptions = ["🐻", "🐼", "🐨", "🦊"];
 
-  // Simulate loading time
+  // Check if buddy exists and redirect if needed
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 3000); // Show splash screen for 3 seconds
+    if (!isBuddyLoading && buddyState) {
+      console.warn("[HomeScreen] Buddy already exists, redirecting");
+      router.replace("/(tabs)/buddy");
+    }
+  }, [isBuddyLoading, buddyState, router]);
 
-    return () => clearTimeout(timer);
-  }, []);
+  // Show loading state
+  if (isLoading || isBuddyLoading) {
+    return <SplashScreen />;
+  }
 
-  // Show splash screen while loading
-  if (isLoading) {
-    return <SplashScreen appName="BearBuddy" />;
+  // If buddy exists, don't show creation screen
+  if (buddyState) {
+    return null;
   }
 
   // Handle emoji selection
   const handleEmojiSelect = (emoji: string) => {
     setSelectedEmoji(emoji);
+  };
+
+  // Handle buddy creation
+  const handleCreateBuddy = async () => {
+    if (!buddyName || !selectedEmoji || isCreating) return;
+
+    try {
+      setIsCreating(true);
+      console.warn("[HomeScreen] Creating new buddy:", {
+        buddyName,
+        selectedEmoji,
+      });
+
+      // Create buddy in Supabase
+      await saveBuddyState({
+        name: buddyName,
+        imageUrl: selectedEmoji,
+        hp: 100,
+        energy: 100,
+        steps: 0,
+        lastUpdated: new Date().toISOString(),
+        lastFed: null,
+        lastDrank: null,
+        isSleeping: false,
+        sleepStartTime: null,
+        totalSleepHours: 0,
+        lastSleepDate: null,
+        waterConsumed: 0,
+      });
+
+      console.warn(
+        "[HomeScreen] Buddy created successfully, navigating to buddy screen"
+      );
+      // Navigate to buddy screen
+      router.replace("/(tabs)/buddy");
+    } catch (error) {
+      console.error("[HomeScreen] Error creating buddy:", error);
+      Alert.alert("Error", "Failed to create buddy. Please try again.");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -71,17 +120,14 @@ export default function HomeScreen() {
       <TouchableOpacity
         style={[
           styles.createButton,
-          (!buddyName || !selectedEmoji) && styles.disabledButton,
+          (!buddyName || !selectedEmoji || isCreating) && styles.disabledButton,
         ]}
-        disabled={!buddyName || !selectedEmoji}
-        onPress={() => {
-          router.push({
-            pathname: "/buddy",
-            params: { name: buddyName, emoji: selectedEmoji },
-          });
-        }}
+        disabled={!buddyName || !selectedEmoji || isCreating}
+        onPress={handleCreateBuddy}
       >
-        <Text style={styles.createButtonText}>Create</Text>
+        <Text style={styles.createButtonText}>
+          {isCreating ? "Creating..." : "Create"}
+        </Text>
       </TouchableOpacity>
     </View>
   );

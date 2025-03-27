@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   StyleSheet,
   View,
@@ -10,13 +10,15 @@ import {
   TextInput,
   Modal,
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as MediaLibrary from "expo-media-library";
 import { Pedometer } from "expo-sensors";
 import FoodCamera from "../../components/FoodCamera";
 import { FoodAnalyzer } from "../../services/FoodAnalyzer";
+import { useBuddyState } from "../../hooks/useBuddyState";
+import SplashScreen from "../../components/SplashScreen";
+import { supabase } from "../../services/supabase";
 
 // Constants for game mechanics
 const NORMAL_HP_DECAY = 0.5; // HP points lost per hour normally
@@ -31,50 +33,198 @@ const UNHEALTHY_FOOD_HP_GAIN = 7; // HP gained for unhealthy food
 const WATER_GOAL = 15; // Daily water goal in cups
 
 export default function BuddyScreen() {
-  // Get parameters from navigation
-  const { name, emoji } = useLocalSearchParams<{
-    name: string;
-    emoji: string;
-  }>();
+  const { buddyState, isLoading, updateBuddyState } = useBuddyState();
+  const router = useRouter();
 
-  // Default values if parameters are not provided
-  const buddyName = name || "Buddy";
-  const buddyEmoji = emoji || "🐻";
-
-  // State for buddy status
-  const [healthLevel, setHealthLevel] = useState<number>(100);
-  const [energyLevel, setEnergyLevel] = useState<number>(100);
-  const [lastFed, setLastFed] = useState<Date>(new Date());
-  const [lastDrank, setLastDrank] = useState<Date>(new Date());
-  const [isSleeping, setIsSleeping] = useState<boolean>(false);
-  const [sleepStartTime, setSleepStartTime] = useState<Date | null>(null);
-
-  // New tracking states
-  const [totalSleepHours, setTotalSleepHours] = useState<number>(0);
-  const [waterConsumed, setWaterConsumed] = useState<number>(0);
-  const [lastSleepDate, setLastSleepDate] = useState<string>("");
-  const [currentStepCount, setCurrentStepCount] = useState<number>(0);
+  // Move all useState hooks to the top
+  const [cameraVisible, setCameraVisible] = React.useState<boolean>(false);
+  const [capturedImage, setCapturedImage] = React.useState<string | null>(null);
+  const [processingImage, setProcessingImage] = React.useState<boolean>(false);
+  const [waterModalVisible, setWaterModalVisible] =
+    React.useState<boolean>(false);
+  const [waterAmount, setWaterAmount] = React.useState<string>("1");
   const [isPedometerAvailable, setIsPedometerAvailable] =
-    useState<boolean>(false);
-  const [dailyStepGoal] = useState<number>(10000); // Standard daily step goal
+    React.useState<boolean>(false);
+  const [currentStepCount, setCurrentStepCount] = React.useState<number>(0);
+  const [dailyStepGoal] = React.useState<number>(10000);
 
-  // Water input modal
-  const [waterModalVisible, setWaterModalVisible] = useState<boolean>(false);
-  const [waterAmount, setWaterAmount] = useState<string>("1");
+  // Timer ref
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Camera and image processing states
-  const [cameraVisible, setCameraVisible] = useState<boolean>(false);
-  const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [processingImage, setProcessingImage] = useState<boolean>(false);
+  // Handler functions
+  const handlePictureTaken = async (imageUri: string) => {
+    if (!buddyState) return;
 
-  // Check for permissions on mount
+    setCapturedImage(imageUri);
+    setCameraVisible(false);
+    setProcessingImage(true);
+
+    try {
+      const analysis = await FoodAnalyzer.analyzeImage(imageUri);
+      const hpGain = Math.round(
+        analysis.isHealthy ? HEALTHY_FOOD_HP_GAIN : UNHEALTHY_FOOD_HP_GAIN
+      );
+
+      await updateBuddyState({
+        hp: Math.min(100, Math.round(buddyState.hp + hpGain)),
+        lastFed: new Date().toISOString(),
+      });
+
+      Alert.alert(
+        analysis.isHealthy ? "Healthy Food!" : "Snack Time!",
+        analysis.isHealthy
+          ? `That's a nutritious meal! ${buddyState.name} feels great and gained ${hpGain} HP!`
+          : `${buddyState.name} enjoyed that treat but it's not very nutritious. Gained ${hpGain} HP.`
+      );
+    } catch (error) {
+      console.error("Error processing food image:", error);
+      Alert.alert("Error", "Failed to analyze food. Please try again.");
+    } finally {
+      setProcessingImage(false);
+      setCapturedImage(null);
+    }
+  };
+
+  const handleWaterSubmit = async () => {
+    if (!buddyState) return;
+
+    const cups = parseInt(waterAmount, 10) || 1;
+    const newWaterConsumed = Math.round((buddyState.waterConsumed || 0) + cups);
+
+    await updateBuddyState({
+      hp: Math.min(100, Math.round(buddyState.hp + cups * 2)),
+      waterConsumed: newWaterConsumed,
+      lastDrank: new Date().toISOString(),
+    });
+
+    Alert.alert(
+      "Refreshing!",
+      `${buddyState.name} has had ${cups} cup${
+        cups > 1 ? "s" : ""
+      } of water! That's ${newWaterConsumed} cups today.`
+    );
+
+    setWaterModalVisible(false);
+    setWaterAmount("1");
+  };
+
+  const handleSleep = async () => {
+    if (!buddyState) return;
+
+    if (buddyState.isSleeping) {
+      // Waking up
+      const now = new Date();
+      const sleepStartTime = new Date(buddyState.sleepStartTime || now);
+      const today = now.toDateString();
+
+      // Calculate hours slept (rounded to 2 decimal places)
+      const hoursSlept =
+        Math.round(
+          ((now.getTime() - sleepStartTime.getTime()) / (1000 * 60 * 60)) * 100
+        ) / 100;
+
+      // Add energy based on sleep time (rounded)
+      const energyGain = Math.round(ENERGY_RECOVERY * hoursSlept);
+
+      // Calculate total sleep for the day (rounded to 2 decimal places)
+      const newTotalSleepHours =
+        Math.round(
+          (buddyState.lastSleepDate === today
+            ? (buddyState.totalSleepHours || 0) + hoursSlept
+            : hoursSlept) * 100
+        ) / 100;
+
+      await updateBuddyState({
+        energy: Math.min(100, Math.round(buddyState.energy + energyGain)),
+        isSleeping: false,
+        sleepStartTime: null,
+        totalSleepHours: newTotalSleepHours,
+        lastSleepDate: today,
+      });
+
+      Alert.alert(
+        "Good morning!",
+        `${buddyState.name} slept for ${hoursSlept.toFixed(
+          1
+        )} hours and feels refreshed!`
+      );
+    } else {
+      // Going to sleep
+      await updateBuddyState({
+        isSleeping: true,
+        sleepStartTime: new Date().toISOString(),
+      });
+
+      Alert.alert("Sleep tight!", `${buddyState.name} is now sleeping!`);
+    }
+  };
+
+  const updateBuddyStats = async () => {
+    if (!buddyState) return;
+
+    const now = new Date();
+    const lastUpdated = new Date(buddyState.lastUpdated);
+
+    // Calculate hours since last update
+    const hoursSinceUpdate =
+      (now.getTime() - lastUpdated.getTime()) / (1000 * 60 * 60);
+
+    // Determine HP decay rate
+    let hpDecayRate = NORMAL_HP_DECAY;
+    if (hoursSinceUpdate > HUNGRY_THRESHOLD) {
+      hpDecayRate += HUNGRY_HP_DECAY;
+    }
+    if (hoursSinceUpdate > THIRSTY_THRESHOLD) {
+      hpDecayRate += THIRSTY_HP_DECAY;
+    }
+
+    // Update HP and energy with rounded values
+    const hpLoss = Math.round(hpDecayRate * hoursSinceUpdate);
+    const energyChange = Math.round(
+      buddyState.isSleeping
+        ? ENERGY_RECOVERY * hoursSinceUpdate
+        : -ENERGY_DECAY * hoursSinceUpdate
+    );
+
+    await updateBuddyState({
+      hp: Math.max(0, Math.round(buddyState.hp - hpLoss)),
+      energy: Math.max(
+        0,
+        Math.min(100, Math.round(buddyState.energy + energyChange))
+      ),
+      lastUpdated: now.toISOString(),
+    });
+  };
+
+  const handleSignOut = async () => {
+    try {
+      console.warn("[Auth] Signing out user");
+      // Just trigger the sign out - the auth state listener in RootLayout will handle navigation
+      await supabase.auth.signOut();
+      console.warn("[Auth] User signed out successfully");
+      // Remove direct navigation - let auth state change handle it
+    } catch (error) {
+      console.error("[Auth] Error signing out:", error);
+      Alert.alert("Error", "Failed to sign out. Please try again.");
+    }
+  };
+
+  // Effects
+  useEffect(() => {
+    if (!isLoading && !buddyState) {
+      console.warn(
+        "[BuddyScreen] No buddy state found, redirecting to creation"
+      );
+      router.replace("/(tabs)");
+    }
+  }, [isLoading, buddyState, router]);
+
   useEffect(() => {
     (async () => {
       await MediaLibrary.requestPermissionsAsync();
     })();
   }, []);
 
-  // Set up pedometer
   useEffect(() => {
     let subscription: { remove: () => void } | null = null;
 
@@ -86,6 +236,9 @@ export default function BuddyScreen() {
         if (isAvailable) {
           subscription = await Pedometer.watchStepCount((result) => {
             setCurrentStepCount(result.steps);
+            if (buddyState) {
+              updateBuddyState({ steps: result.steps });
+            }
           });
         }
       } catch (error) {
@@ -96,262 +249,31 @@ export default function BuddyScreen() {
 
     subscribeToPedometer();
 
-    // Clean up the subscription when unmounting
     return () => {
       if (subscription) {
         subscription.remove();
       }
     };
-  }, []);
+  }, [buddyState, updateBuddyState]);
 
-  // Ref for timer
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Initialize or load saved data
   useEffect(() => {
-    loadBuddyData();
+    if (!buddyState) return;
 
-    // Start the interval to update stats
-    timerRef.current = setInterval(updateBuddyStats, 60000); // Update every minute
+    timerRef.current = setInterval(() => {
+      updateBuddyStats();
+    }, 60000);
 
-    // Clean up on unmount
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
     };
-  }, []);
+  }, [buddyState]);
 
-  // Effect to save data whenever stats change
-  useEffect(() => {
-    saveBuddyData();
-  }, [
-    healthLevel,
-    energyLevel,
-    lastFed,
-    lastDrank,
-    isSleeping,
-    sleepStartTime,
-    totalSleepHours,
-    waterConsumed,
-    lastSleepDate,
-  ]);
-
-  // Reset water consumption at midnight
-  useEffect(() => {
-    const checkDayChange = () => {
-      const now = new Date();
-      const today = now.toDateString();
-
-      AsyncStorage.getItem(`last_active_day_${buddyName}`).then((lastDay) => {
-        if (lastDay && lastDay !== today) {
-          // It's a new day, reset water count
-          setWaterConsumed(0);
-        }
-
-        // Update the last active day
-        AsyncStorage.setItem(`last_active_day_${buddyName}`, today);
-      });
-    };
-
-    // Check immediately and then set an interval
-    checkDayChange();
-
-    // Set a timer to check for day change every hour
-    const dayChangeTimer = setInterval(checkDayChange, 3600000); // 1 hour
-
-    return () => {
-      clearInterval(dayChangeTimer);
-    };
-  }, [buddyName]);
-
-  // Load buddy data from storage
-  const loadBuddyData = async () => {
-    try {
-      const dataString = await AsyncStorage.getItem(`buddy_${buddyName}`);
-      if (dataString) {
-        const data = JSON.parse(dataString);
-        setHealthLevel(data.healthLevel);
-        setEnergyLevel(data.energyLevel);
-        setLastFed(new Date(data.lastFed));
-        setLastDrank(new Date(data.lastDrank));
-        setIsSleeping(data.isSleeping);
-        setSleepStartTime(
-          data.sleepStartTime ? new Date(data.sleepStartTime) : null
-        );
-        setTotalSleepHours(data.totalSleepHours || 0);
-        setWaterConsumed(data.waterConsumed || 0);
-        setLastSleepDate(data.lastSleepDate || "");
-      }
-    } catch (error) {
-      console.error("Failed to load buddy data:", error);
-    }
-  };
-
-  // Save buddy data to storage
-  const saveBuddyData = async () => {
-    try {
-      const data = {
-        healthLevel,
-        energyLevel,
-        lastFed: lastFed.toISOString(),
-        lastDrank: lastDrank.toISOString(),
-        isSleeping,
-        sleepStartTime: sleepStartTime?.toISOString() || null,
-        totalSleepHours,
-        waterConsumed,
-        lastSleepDate,
-      };
-      await AsyncStorage.setItem(`buddy_${buddyName}`, JSON.stringify(data));
-    } catch (error) {
-      console.error("Failed to save buddy data:", error);
-    }
-  };
-
-  // Update buddy stats based on time
-  const updateBuddyStats = () => {
-    const now = new Date();
-
-    // Calculate hours since last actions
-    const hoursSinceLastFed =
-      (now.getTime() - lastFed.getTime()) / (1000 * 60 * 60);
-    const hoursSinceLastDrank =
-      (now.getTime() - lastDrank.getTime()) / (1000 * 60 * 60);
-
-    // Determine HP decay rate
-    let hpDecayRate = NORMAL_HP_DECAY;
-    if (hoursSinceLastFed > HUNGRY_THRESHOLD) {
-      hpDecayRate += HUNGRY_HP_DECAY;
-    }
-    if (hoursSinceLastDrank > THIRSTY_THRESHOLD) {
-      hpDecayRate += THIRSTY_HP_DECAY;
-    }
-
-    // Update HP
-    const hoursSinceLastUpdate = 1 / 60; // 1 minute in hours
-    const hpLoss = hpDecayRate * hoursSinceLastUpdate;
-    setHealthLevel((prev) => Math.max(0, prev - hpLoss));
-
-    // Update energy based on sleep status
-    if (isSleeping && sleepStartTime) {
-      // Energy increases while sleeping
-      const energyGain = ENERGY_RECOVERY * hoursSinceLastUpdate;
-      setEnergyLevel((prev) => Math.min(100, prev + energyGain));
-    } else {
-      // Energy decreases while awake
-      const energyLoss = ENERGY_DECAY * hoursSinceLastUpdate;
-      setEnergyLevel((prev) => Math.max(0, prev - energyLoss));
-    }
-  };
-
-  // Handler for when a picture is taken
-  const handlePictureTaken = async (imageUri: string) => {
-    setCapturedImage(imageUri);
-    setCameraVisible(false);
-    setProcessingImage(true);
-
-    // Analyze the food image using our service
-    try {
-      const analysis = await FoodAnalyzer.analyzeImage(imageUri);
-
-      // Update buddy based on analysis
-      setLastFed(new Date());
-
-      if (analysis.isHealthy) {
-        setHealthLevel((prev) => Math.min(100, prev + HEALTHY_FOOD_HP_GAIN));
-        Alert.alert(
-          "Healthy Food!",
-          `That's a nutritious meal! ${buddyName} feels great and gained ${HEALTHY_FOOD_HP_GAIN} HP!`
-        );
-      } else {
-        setHealthLevel((prev) => Math.min(100, prev + UNHEALTHY_FOOD_HP_GAIN));
-        Alert.alert(
-          "Snack Time!",
-          `${buddyName} enjoyed that treat but it's not very nutritious. Gained ${UNHEALTHY_FOOD_HP_GAIN} HP.`
-        );
-      }
-    } catch (error) {
-      console.error("Error processing food image:", error);
-      Alert.alert("Error", "Failed to analyze food. Please try again.");
-    } finally {
-      setProcessingImage(false);
-      setCapturedImage(null);
-    }
-  };
-
-  // Handle opening the camera
-  const handleFeed = () => {
-    setCameraVisible(true);
-  };
-
-  // Handle giving water to buddy
-  const handleDrink = () => {
-    setWaterModalVisible(true);
-  };
-
-  // Handle water modal submit
-  const handleWaterSubmit = () => {
-    const cups = parseInt(waterAmount, 10) || 1;
-
-    setLastDrank(new Date());
-    setHealthLevel((prev) => Math.min(100, prev + cups * 2)); // 2 HP per cup
-    setWaterConsumed((prev) => prev + cups);
-
-    Alert.alert(
-      "Refreshing!",
-      `${buddyName} has had ${cups} cup${
-        cups > 1 ? "s" : ""
-      } of water! That's ${waterConsumed + cups} cups today.`
-    );
-
-    setWaterModalVisible(false);
-    setWaterAmount("1");
-  };
-
-  // Handle sleep toggle
-  const handleSleep = () => {
-    if (isSleeping) {
-      // Waking up
-      if (sleepStartTime) {
-        const now = new Date();
-        const today = now.toDateString();
-
-        // Calculate hours slept
-        const hoursSlept =
-          (now.getTime() - sleepStartTime.getTime()) / (1000 * 60 * 60);
-
-        // Add energy based on sleep time
-        const energyGain = ENERGY_RECOVERY * hoursSlept;
-        setEnergyLevel((prev) => Math.min(100, prev + energyGain));
-
-        // Track total sleep for the day
-        if (lastSleepDate !== today) {
-          // This is a new day's sleep
-          setTotalSleepHours(hoursSlept);
-          setLastSleepDate(today);
-        } else {
-          // Add to today's sleep (nap)
-          setTotalSleepHours((prev) => prev + hoursSlept);
-        }
-
-        // Alert user
-        Alert.alert(
-          "Good morning!",
-          `${buddyName} slept for ${hoursSlept.toFixed(
-            1
-          )} hours and feels refreshed!`
-        );
-      }
-
-      setIsSleeping(false);
-      setSleepStartTime(null);
-    } else {
-      // Going to sleep
-      setIsSleeping(true);
-      setSleepStartTime(new Date());
-      Alert.alert("Sleep tight!", `${buddyName} is now sleeping!`);
-    }
-  };
+  // Show loading state
+  if (isLoading || !buddyState) {
+    return <SplashScreen />;
+  }
 
   // Camera view when taking a picture
   if (cameraVisible) {
@@ -359,7 +281,7 @@ export default function BuddyScreen() {
       <FoodCamera
         onTakePicture={handlePictureTaken}
         onCancel={() => setCameraVisible(false)}
-        buddyName={buddyName}
+        buddyName={buddyState.name}
       />
     );
   }
@@ -385,16 +307,21 @@ export default function BuddyScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
+        {/* Sign Out Button */}
+        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+          <Ionicons name="log-out-outline" size={24} color="#5D4037" />
+        </TouchableOpacity>
+
         {/* Buddy name and image */}
-        <Text style={styles.buddyName}>{buddyName}</Text>
+        <Text style={styles.buddyName}>{buddyState.name}</Text>
         <View
           style={[
             styles.buddyImageContainer,
-            isSleeping && styles.sleepingBuddy,
+            buddyState.isSleeping && styles.sleepingBuddy,
           ]}
         >
           <Text style={styles.buddyEmoji}>
-            {isSleeping ? "💤" : buddyEmoji}
+            {buddyState.isSleeping ? "💤" : buddyState.imageUrl}
           </Text>
         </View>
 
@@ -405,13 +332,15 @@ export default function BuddyScreen() {
             <View style={styles.statusLabelContainer}>
               <Text style={styles.statusEmoji}>❤️</Text>
               <Text style={styles.statusLabel}>HP</Text>
-              <Text style={styles.statusValue}>{Math.round(healthLevel)}%</Text>
+              <Text style={styles.statusValue}>
+                {Math.round(buddyState.hp)}%
+              </Text>
             </View>
             <View style={styles.statusBarBackground}>
               <View
                 style={[
                   styles.statusBarFill,
-                  { width: `${healthLevel}%`, backgroundColor: "#FF5252" },
+                  { width: `${buddyState.hp}%`, backgroundColor: "#FF5252" },
                 ]}
               />
             </View>
@@ -422,13 +351,18 @@ export default function BuddyScreen() {
             <View style={styles.statusLabelContainer}>
               <Text style={styles.statusEmoji}>⚡</Text>
               <Text style={styles.statusLabel}>Energy</Text>
-              <Text style={styles.statusValue}>{Math.round(energyLevel)}%</Text>
+              <Text style={styles.statusValue}>
+                {Math.round(buddyState.energy)}%
+              </Text>
             </View>
             <View style={styles.statusBarBackground}>
               <View
                 style={[
                   styles.statusBarFill,
-                  { width: `${energyLevel}%`, backgroundColor: "#FFD600" },
+                  {
+                    width: `${buddyState.energy}%`,
+                    backgroundColor: "#FFD600",
+                  },
                 ]}
               />
             </View>
@@ -438,13 +372,19 @@ export default function BuddyScreen() {
         {/* Action buttons */}
         <View style={styles.actionContainer}>
           {/* Feed button */}
-          <TouchableOpacity style={styles.actionButton} onPress={handleFeed}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setCameraVisible(true)}
+          >
             <Ionicons name="camera-outline" size={36} color="#5D4037" />
             <Text style={styles.actionText}>Feed</Text>
           </TouchableOpacity>
 
           {/* Drink button */}
-          <TouchableOpacity style={styles.actionButton} onPress={handleDrink}>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setWaterModalVisible(true)}
+          >
             <Ionicons name="water-outline" size={36} color="#5D4037" />
             <Text style={styles.actionText}>Drink</Text>
           </TouchableOpacity>
@@ -452,12 +392,12 @@ export default function BuddyScreen() {
           {/* Sleep/Wake button */}
           <TouchableOpacity style={styles.actionButton} onPress={handleSleep}>
             <Ionicons
-              name={isSleeping ? "sunny-outline" : "bed-outline"}
+              name={buddyState.isSleeping ? "sunny-outline" : "bed-outline"}
               size={36}
               color="#5D4037"
             />
             <Text style={styles.actionText}>
-              {isSleeping ? "Wake" : "Sleep"}
+              {buddyState.isSleeping ? "Wake" : "Sleep"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -468,8 +408,10 @@ export default function BuddyScreen() {
           <View style={styles.trackingItem}>
             <Ionicons name="bed-outline" size={24} color="#5D4037" />
             <Text style={styles.trackingText}>
-              {lastSleepDate === new Date().toDateString()
-                ? `Slept ${totalSleepHours.toFixed(1)} hours today`
+              {buddyState.lastSleepDate === new Date().toDateString()
+                ? `Slept ${
+                    buddyState.totalSleepHours?.toFixed(1) || 0
+                  } hours today`
                 : "No sleep recorded today"}
             </Text>
           </View>
@@ -478,7 +420,9 @@ export default function BuddyScreen() {
           <View style={styles.trackingItem}>
             <Ionicons name="water-outline" size={24} color="#5D4037" />
             <Text style={styles.trackingText}>
-              {`${waterConsumed} / ${WATER_GOAL} cups of water today`}
+              {`${
+                buddyState.waterConsumed || 0
+              } / ${WATER_GOAL} cups of water today`}
             </Text>
           </View>
 
@@ -491,7 +435,7 @@ export default function BuddyScreen() {
                   {
                     width: `${Math.min(
                       100,
-                      (waterConsumed / WATER_GOAL) * 100
+                      ((buddyState.waterConsumed || 0) / WATER_GOAL) * 100
                     )}%`,
                   },
                 ]}
@@ -775,5 +719,27 @@ const styles = StyleSheet.create({
     color: "#5D4037",
     fontWeight: "bold",
     fontSize: 16,
+  },
+  loadingText: {
+    fontSize: 24,
+    color: "#5D4037",
+  },
+  errorText: {
+    fontSize: 24,
+    color: "#FF5252",
+  },
+  signOutButton: {
+    position: "absolute",
+    top: 20,
+    right: 20,
+    width: 40,
+    height: 40,
+    backgroundColor: "#FFD54F",
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#FFA000",
+    zIndex: 1,
   },
 });
