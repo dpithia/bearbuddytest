@@ -14,6 +14,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as MediaLibrary from "expo-media-library";
+import { Pedometer } from "expo-sensors";
 import FoodCamera from "../../components/FoodCamera";
 import { FoodAnalyzer } from "../../services/FoodAnalyzer";
 
@@ -52,6 +53,10 @@ export default function BuddyScreen() {
   const [totalSleepHours, setTotalSleepHours] = useState<number>(0);
   const [waterConsumed, setWaterConsumed] = useState<number>(0);
   const [lastSleepDate, setLastSleepDate] = useState<string>("");
+  const [currentStepCount, setCurrentStepCount] = useState<number>(0);
+  const [isPedometerAvailable, setIsPedometerAvailable] =
+    useState<boolean>(false);
+  const [dailyStepGoal] = useState<number>(10000); // Standard daily step goal
 
   // Water input modal
   const [waterModalVisible, setWaterModalVisible] = useState<boolean>(false);
@@ -67,6 +72,36 @@ export default function BuddyScreen() {
     (async () => {
       await MediaLibrary.requestPermissionsAsync();
     })();
+  }, []);
+
+  // Set up pedometer
+  useEffect(() => {
+    let subscription: { remove: () => void } | null = null;
+
+    const subscribeToPedometer = async () => {
+      try {
+        const isAvailable = await Pedometer.isAvailableAsync();
+        setIsPedometerAvailable(isAvailable);
+
+        if (isAvailable) {
+          subscription = await Pedometer.watchStepCount((result) => {
+            setCurrentStepCount(result.steps);
+          });
+        }
+      } catch (error) {
+        console.error("Failed to set up pedometer:", error);
+        setIsPedometerAvailable(false);
+      }
+    };
+
+    subscribeToPedometer();
+
+    // Clean up the subscription when unmounting
+    return () => {
+      if (subscription) {
+        subscription.remove();
+      }
+    };
   }, []);
 
   // Ref for timer
@@ -463,6 +498,35 @@ export default function BuddyScreen() {
               />
             </View>
           </View>
+
+          {/* Steps tracking */}
+          <View style={styles.trackingItem}>
+            <Ionicons name="footsteps-outline" size={24} color="#5D4037" />
+            <Text style={styles.trackingText}>
+              {isPedometerAvailable
+                ? `${currentStepCount} / ${dailyStepGoal} steps today`
+                : "Pedometer not available"}
+            </Text>
+          </View>
+
+          {/* Steps progress bar */}
+          {isPedometerAvailable && (
+            <View style={styles.waterProgressContainer}>
+              <View style={styles.waterProgressBackground}>
+                <View
+                  style={[
+                    styles.stepsProgressFill,
+                    {
+                      width: `${Math.min(
+                        100,
+                        (currentStepCount / dailyStepGoal) * 100
+                      )}%`,
+                    },
+                  ]}
+                />
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Water Modal */}
@@ -521,7 +585,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: 130,
+    paddingTop: 70,
   },
   buddyName: {
     fontSize: 28,
@@ -639,6 +703,7 @@ const styles = StyleSheet.create({
   },
   waterProgressContainer: {
     marginTop: 5,
+    marginBottom: 15,
   },
   waterProgressBackground: {
     height: 15,
@@ -649,6 +714,11 @@ const styles = StyleSheet.create({
   waterProgressFill: {
     height: "100%",
     backgroundColor: "#4FC3F7",
+    borderRadius: 10,
+  },
+  stepsProgressFill: {
+    height: "100%",
+    backgroundColor: "#66BB6A", // Green color for steps
     borderRadius: 10,
   },
   // Modal styles
