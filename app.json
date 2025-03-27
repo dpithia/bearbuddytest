@@ -10,14 +10,18 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.BearBuddy"
+      "bundleIdentifier": "com.anonymous.BearBuddy",
+      "runtimeVersion": "1.0.0"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.anonymous.BearBuddy"
+      "package": "com.anonymous.BearBuddy",
+      "runtimeVersion": {
+        "policy": "appVersion"
+      }
     },
     "web": {
       "bundler": "metro",
@@ -38,6 +42,17 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "6350277a-b4a3-4b5c-817d-f24d3a076548"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6350277a-b4a3-4b5c-817d-f24d3a076548"
     }
   }
 }

@@ -120,11 +120,11 @@ export default function RootLayout() {
     if (initialRoute && !isLoading && !isCheckingBuddy) {
       console.warn("[Auth] Navigating to initial route:", initialRoute);
       const timer = setTimeout(() => {
-        router.replace(initialRoute);
+        router.replace(initialRoute as any); // Type assertion to bypass type error
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [initialRoute, isLoading, isCheckingBuddy]);
+  }, [initialRoute, isLoading, isCheckingBuddy, router]);
 
   const handleSignOut = async () => {
     try {
