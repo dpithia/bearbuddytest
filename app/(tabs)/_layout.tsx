@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { Tabs, useRouter, usePathname } from "expo-router";
 import { checkExistingBuddy } from "../../services/buddyService";
+import { Ionicons } from "@expo/vector-icons";
 
 export default function TabLayout() {
   const router = useRouter();
@@ -41,20 +42,45 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarStyle: { display: "none" },
         headerShown: false,
+        tabBarActiveTintColor: "#FFA000",
+        tabBarInactiveTintColor: "#5D4037",
+        tabBarStyle: {
+          backgroundColor: "#FFF8E1",
+          borderTopColor: "#FFE0B2",
+        },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
           href: null,
+          tabBarStyle: { display: "none" },
         }}
       />
       <Tabs.Screen
         name="buddy"
         options={{
-          href: "/(tabs)/buddy",
+          title: "Buddy",
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="paw-outline" size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="social"
+        options={{
+          title: "Social",
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="people-outline" size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="enter-code"
+        options={{
+          href: null,
+          tabBarStyle: { display: "none" },
         }}
       />
     </Tabs>

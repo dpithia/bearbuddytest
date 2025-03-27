@@ -404,10 +404,12 @@ export default function BuddyScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        {/* Sign Out Button */}
-        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-          <Ionicons name="log-out-outline" size={24} color="#5D4037" />
-        </TouchableOpacity>
+        {/* Header buttons */}
+        <View style={styles.headerButtons}>
+          <TouchableOpacity style={styles.headerButton} onPress={handleSignOut}>
+            <Ionicons name="log-out-outline" size={24} color="#5D4037" />
+          </TouchableOpacity>
+        </View>
 
         {/* Loading indicator for stats update */}
         {isUpdatingStats && (
@@ -839,18 +841,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 2,
   },
-  signOutButton: {
+  headerButtons: {
+    flexDirection: "row",
     position: "absolute",
-    top: 20,
-    right: 20,
-    width: 40,
-    height: 40,
-    backgroundColor: "#FFD54F",
-    borderRadius: 20,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FFA000",
+    top: 16,
+    right: 16,
+    gap: 16,
     zIndex: 1,
+  },
+  headerButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#FFE0B2",
   },
 });
