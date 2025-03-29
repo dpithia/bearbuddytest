@@ -20,6 +20,7 @@ import { FoodAnalyzer } from "../../services/FoodAnalyzer";
 import { useBuddyState } from "../../hooks/useBuddyState";
 import SplashScreen from "../../components/SplashScreen";
 import { supabase } from "../../services/supabase";
+import { useFoodEntryStore } from "../../stores/foodEntryStore";
 
 // Constants for game mechanics
 const NORMAL_HP_DECAY = 0.5; // HP points lost per hour normally
@@ -45,6 +46,7 @@ const debounce = (func: Function, wait: number) => {
 export default function BuddyScreen() {
   const { buddyState, isLoading, updateBuddyState } = useBuddyState();
   const router = useRouter();
+  const addFoodEntry = useFoodEntryStore((state) => state.addEntry);
 
   // Add loading states
   const [isUpdatingStats, setIsUpdatingStats] = useState(false);
@@ -182,6 +184,16 @@ export default function BuddyScreen() {
         analysis.isHealthy ? HEALTHY_FOOD_HP_GAIN : UNHEALTHY_FOOD_HP_GAIN
       );
 
+      // Add to food journal
+      addFoodEntry({
+        name: analysis.labels?.[0] || "Unknown Food",
+        timestamp: new Date(),
+        imageUrl: imageUri,
+        confidence: analysis.confidence || 0,
+        isHealthy: analysis.isHealthy,
+        labels: analysis.labels || [],
+      });
+
       await updateBuddyState({
         hp: Math.min(100, Math.round(buddyState.hp + hpGain)),
         lastFed: new Date().toISOString(),
@@ -198,7 +210,7 @@ export default function BuddyScreen() {
       );
     } catch (error) {
       console.error("Error processing food image:", error);
-      Alert.alert("Error", "Failed to analyze food. Please try again.");
+      Alert.alert("Error", "Failed to process food image");
     } finally {
       setProcessingImage(false);
       setCapturedImage(null);

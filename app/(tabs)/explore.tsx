@@ -1,94 +1,79 @@
-import React, { useState } from "react";
-import { StyleSheet, View, Dimensions, ScrollView } from "react-native";
-import {
-  TabView,
-  TabBar,
-  Route,
-  NavigationState,
-  SceneRendererProps,
-} from "react-native-tab-view";
+import React from "react";
+import { StyleSheet, View, ScrollView, Image, Pressable } from "react-native";
 import { ThemedText } from "@/components/ThemedText";
-import { ThemedView } from "@/components/ThemedView";
 import { IconSymbol } from "@/components/ui/IconSymbol";
+import { useRouter } from "expo-router";
+import { useFoodEntryStore } from "../../stores/foodEntryStore";
 
-type TabRoute = Route & {
-  key: "journal" | "analytics";
-  title: string;
+type FoodEntry = {
+  id: string;
+  name: string;
+  timestamp: Date;
+  imageUrl?: string;
+  confidence: number;
+  calories?: number;
+  protein?: number;
+  carbs?: number;
+  fat?: number;
+  isHealthy: boolean;
+  labels: string[];
 };
 
-const JournalTab = () => (
-  <ScrollView style={styles.scrollView}>
-    <ThemedView style={styles.journalContainer}>
-      <View style={styles.dateHeader}>
-        <ThemedText style={styles.dateText}>Today</ThemedText>
+const FoodEntryCard = ({ entry }: { entry: FoodEntry }) => (
+  <Pressable
+    style={[
+      styles.entryCard,
+      { borderLeftColor: entry.isHealthy ? "#4CAF50" : "#FFA000" },
+    ]}
+  >
+    {entry.imageUrl && (
+      <Image source={{ uri: entry.imageUrl }} style={styles.entryImage} />
+    )}
+    <View style={styles.entryContent}>
+      <ThemedText style={[styles.entryName, { fontWeight: "600" }]}>
+        {entry.name}
+      </ThemedText>
+      <ThemedText style={styles.entryTime}>
+        {new Date(entry.timestamp).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+      </ThemedText>
+      <View style={styles.labels}>
+        {entry.labels.slice(0, 2).map((label, index) => (
+          <ThemedText key={index} style={styles.label}>
+            {label}
+          </ThemedText>
+        ))}
       </View>
-      <View style={styles.emptyState}>
-        <IconSymbol
-          size={64}
-          color="#FFA000"
-          name="camera"
-          style={styles.emptyIcon}
-        />
-        <ThemedText style={styles.emptyText}>
-          Take a photo of your food to start tracking
-        </ThemedText>
-      </View>
-    </ThemedView>
-  </ScrollView>
-);
-
-const AnalyticsTab = () => (
-  <ScrollView style={styles.scrollView}>
-    <ThemedView style={styles.analyticsContainer}>
-      <View style={styles.chartContainer}>
-        <ThemedText style={styles.chartTitle}>Nutrition Overview</ThemedText>
-        <View style={styles.placeholderChart}>
-          <ThemedText>Charts Coming Soon</ThemedText>
-        </View>
-      </View>
-      <View style={styles.insightsContainer}>
-        <ThemedText style={styles.insightsTitle}>AI Insights</ThemedText>
-        <View style={styles.placeholderInsights}>
-          <ThemedText>AI-powered insights will appear here</ThemedText>
-        </View>
-      </View>
-    </ThemedView>
-  </ScrollView>
+    </View>
+    <View style={styles.entryConfidence}>
+      <ThemedText style={styles.confidenceText}>
+        {Math.round(entry.confidence * 100)}%
+      </ThemedText>
+      <IconSymbol
+        size={24}
+        color={entry.isHealthy ? "#4CAF50" : "#FFA000"}
+        name={
+          entry.isHealthy
+            ? "checkmark.circle.fill"
+            : "exclamationmark.circle.fill"
+        }
+      />
+    </View>
+  </Pressable>
 );
 
 export default function ExploreScreen() {
-  const [index, setIndex] = useState(0);
-  const [routes] = useState<TabRoute[]>([
-    { key: "journal", title: "Journal" },
-    { key: "analytics", title: "Analytics" },
-  ]);
+  const router = useRouter();
+  const entries = useFoodEntryStore((state) => state.entries);
 
-  const renderScene = ({ route }: { route: TabRoute }) => {
-    switch (route.key) {
-      case "journal":
-        return <JournalTab />;
-      case "analytics":
-        return <AnalyticsTab />;
-      default:
-        return null;
-    }
+  const goToCamera = () => {
+    router.push("/(tabs)/buddy");
   };
 
-  const renderTabBar = (
-    props: SceneRendererProps & { navigationState: NavigationState<TabRoute> }
-  ) => (
-    <TabBar
-      {...props}
-      style={styles.tabBar}
-      indicatorStyle={styles.indicator}
-      activeColor="#FFA000"
-      inactiveColor="#5D4037"
-      tabStyle={styles.tab}
-    />
-  );
-
   return (
-    <ThemedView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <IconSymbol
           size={48}
@@ -97,17 +82,46 @@ export default function ExploreScreen() {
           style={styles.headerIcon}
         />
         <ThemedText type="title" style={styles.headerTitle}>
-          Food Journal
+          My Food Journal
         </ThemedText>
       </View>
-      <TabView
-        navigationState={{ index, routes }}
-        renderScene={renderScene}
-        onIndexChange={setIndex}
-        initialLayout={{ width: Dimensions.get("window").width }}
-        renderTabBar={renderTabBar}
-      />
-    </ThemedView>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+      >
+        <View style={styles.journalContainer}>
+          <View style={styles.dateHeader}>
+            <ThemedText style={[styles.dateText, { fontWeight: "600" }]}>
+              Today
+            </ThemedText>
+          </View>
+          {entries.length > 0 ? (
+            entries.map((entry) => (
+              <FoodEntryCard key={entry.id} entry={entry} />
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Pressable onPress={goToCamera} style={styles.emptyStateButton}>
+                <IconSymbol
+                  size={64}
+                  color="#FFA000"
+                  name="camera"
+                  style={styles.emptyIcon}
+                />
+                <ThemedText style={[styles.emptyText, { color: "#11181C" }]}>
+                  Take a photo of your food to start tracking
+                </ThemedText>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      <Pressable onPress={goToCamera} style={styles.fab}>
+        <IconSymbol size={32} color="#FFFFFF" name="camera" />
+      </Pressable>
+    </View>
   );
 }
 
@@ -128,33 +142,19 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 24,
-  },
-  tabBar: {
-    backgroundColor: "#FFF8E1",
-    borderBottomWidth: 1,
-    borderBottomColor: "#FFE0B2",
-  },
-  indicator: {
-    backgroundColor: "#FFA000",
-  },
-  tabLabel: {
-    fontWeight: "600",
-    textTransform: "none",
-  },
-  tabContent: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tab: {
-    paddingVertical: 8,
+    color: "#11181C",
   },
   scrollView: {
     flex: 1,
     backgroundColor: "#FFF8E1",
   },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: 20,
+  },
   journalContainer: {
     padding: 16,
+    backgroundColor: "#FFF8E1",
   },
   dateHeader: {
     paddingVertical: 12,
@@ -164,6 +164,7 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 18,
     fontWeight: "600",
+    color: "#11181C",
   },
   emptyState: {
     alignItems: "center",
@@ -175,55 +176,90 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: "#5D4037",
+    color: "#11181C",
     textAlign: "center",
   },
-  analyticsContainer: {
-    padding: 16,
-  },
-  chartContainer: {
+  entryCard: {
+    flexDirection: "row",
     backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 16,
-    marginBottom: 16,
+    marginVertical: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    borderLeftWidth: 4,
   },
-  chartTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 16,
+  entryImage: {
+    width: 70,
+    height: 70,
+    borderRadius: 10,
+    marginRight: 16,
   },
-  placeholderChart: {
-    height: 200,
-    backgroundColor: "#FFF8E1",
-    borderRadius: 8,
-    alignItems: "center",
+  entryContent: {
+    flex: 1,
     justifyContent: "center",
   },
-  insightsContainer: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 16,
+  entryName: {
+    fontSize: 18,
+    color: "#11181C",
+    marginBottom: 6,
+  },
+  entryTime: {
+    fontSize: 14,
+    color: "#687076",
+    marginBottom: 4,
+  },
+  entryCalories: {
+    fontSize: 16,
+    color: "#FFA000",
+    fontWeight: "600",
+  },
+  entryConfidence: {
+    justifyContent: "center",
+    paddingLeft: 16,
+    borderLeftWidth: 1,
+    borderLeftColor: "#FFE0B2",
+  },
+  confidenceText: {
+    fontSize: 14,
+    color: "#687076",
+    fontWeight: "600",
+  },
+  fab: {
+    position: "absolute",
+    right: 20,
+    bottom: 20,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FFA000",
+    justifyContent: "center",
+    alignItems: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
-  insightsTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 16,
-  },
-  placeholderInsights: {
-    padding: 16,
-    backgroundColor: "#FFF8E1",
-    borderRadius: 8,
+  emptyStateButton: {
     alignItems: "center",
     justifyContent: "center",
+  },
+  labels: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 4,
+    marginTop: 4,
+  },
+  label: {
+    fontSize: 12,
+    color: "#687076",
+    backgroundColor: "#F5F5F5",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
   },
 });
