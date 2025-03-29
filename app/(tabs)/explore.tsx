@@ -1,109 +1,229 @@
-import { StyleSheet, Image, Platform } from 'react-native';
+import React, { useState } from "react";
+import { StyleSheet, View, Dimensions, ScrollView } from "react-native";
+import {
+  TabView,
+  TabBar,
+  Route,
+  NavigationState,
+  SceneRendererProps,
+} from "react-native-tab-view";
+import { ThemedText } from "@/components/ThemedText";
+import { ThemedView } from "@/components/ThemedView";
+import { IconSymbol } from "@/components/ui/IconSymbol";
 
-import { Collapsible } from '@/components/Collapsible';
-import { ExternalLink } from '@/components/ExternalLink';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
-import { IconSymbol } from '@/components/ui/IconSymbol';
+type TabRoute = Route & {
+  key: "journal" | "analytics";
+  title: string;
+};
 
-export default function TabTwoScreen() {
-  return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
+const JournalTab = () => (
+  <ScrollView style={styles.scrollView}>
+    <ThemedView style={styles.journalContainer}>
+      <View style={styles.dateHeader}>
+        <ThemedText style={styles.dateText}>Today</ThemedText>
+      </View>
+      <View style={styles.emptyState}>
         <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
+          size={64}
+          color="#FFA000"
+          name="camera"
+          style={styles.emptyIcon}
         />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Explore</ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
+        <ThemedText style={styles.emptyText}>
+          Take a photo of your food to start tracking
         </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
+      </View>
+    </ThemedView>
+  </ScrollView>
+);
+
+const AnalyticsTab = () => (
+  <ScrollView style={styles.scrollView}>
+    <ThemedView style={styles.analyticsContainer}>
+      <View style={styles.chartContainer}>
+        <ThemedText style={styles.chartTitle}>Nutrition Overview</ThemedText>
+        <View style={styles.placeholderChart}>
+          <ThemedText>Charts Coming Soon</ThemedText>
+        </View>
+      </View>
+      <View style={styles.insightsContainer}>
+        <ThemedText style={styles.insightsTitle}>AI Insights</ThemedText>
+        <View style={styles.placeholderInsights}>
+          <ThemedText>AI-powered insights will appear here</ThemedText>
+        </View>
+      </View>
+    </ThemedView>
+  </ScrollView>
+);
+
+export default function ExploreScreen() {
+  const [index, setIndex] = useState(0);
+  const [routes] = useState<TabRoute[]>([
+    { key: "journal", title: "Journal" },
+    { key: "analytics", title: "Analytics" },
+  ]);
+
+  const renderScene = ({ route }: { route: TabRoute }) => {
+    switch (route.key) {
+      case "journal":
+        return <JournalTab />;
+      case "analytics":
+        return <AnalyticsTab />;
+      default:
+        return null;
+    }
+  };
+
+  const renderTabBar = (
+    props: SceneRendererProps & { navigationState: NavigationState<TabRoute> }
+  ) => (
+    <TabBar
+      {...props}
+      style={styles.tabBar}
+      indicatorStyle={styles.indicator}
+      activeColor="#FFA000"
+      inactiveColor="#5D4037"
+      tabStyle={styles.tab}
+    />
+  );
+
+  return (
+    <ThemedView style={styles.container}>
+      <View style={styles.header}>
+        <IconSymbol
+          size={48}
+          color="#FFA000"
+          name="fork.knife"
+          style={styles.headerIcon}
+        />
+        <ThemedText type="title" style={styles.headerTitle}>
+          Food Journal
         </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image source={require('@/assets/images/react-logo.png')} style={{ alignSelf: 'center' }} />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Custom fonts">
-        <ThemedText>
-          Open <ThemedText type="defaultSemiBold">app/_layout.tsx</ThemedText> to see how to load{' '}
-          <ThemedText style={{ fontFamily: 'SpaceMono' }}>
-            custom fonts such as this one.
-          </ThemedText>
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/versions/latest/sdk/font">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user's current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful <ThemedText type="defaultSemiBold">react-native-reanimated</ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+      </View>
+      <TabView
+        navigationState={{ index, routes }}
+        renderScene={renderScene}
+        onIndexChange={setIndex}
+        initialLayout={{ width: Dimensions.get("window").width }}
+        renderTabBar={renderTabBar}
+      />
+    </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  container: {
+    flex: 1,
+    backgroundColor: "#FFF8E1",
   },
-  titleContainer: {
-    flexDirection: 'row',
-    gap: 8,
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    paddingTop: 60,
+    backgroundColor: "#FFF8E1",
+  },
+  headerIcon: {
+    marginRight: 12,
+  },
+  headerTitle: {
+    fontSize: 24,
+  },
+  tabBar: {
+    backgroundColor: "#FFF8E1",
+    borderBottomWidth: 1,
+    borderBottomColor: "#FFE0B2",
+  },
+  indicator: {
+    backgroundColor: "#FFA000",
+  },
+  tabLabel: {
+    fontWeight: "600",
+    textTransform: "none",
+  },
+  tabContent: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tab: {
+    paddingVertical: 8,
+  },
+  scrollView: {
+    flex: 1,
+    backgroundColor: "#FFF8E1",
+  },
+  journalContainer: {
+    padding: 16,
+  },
+  dateHeader: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#FFE0B2",
+  },
+  dateText: {
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 48,
+  },
+  emptyIcon: {
+    marginBottom: 16,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: "#5D4037",
+    textAlign: "center",
+  },
+  analyticsContainer: {
+    padding: 16,
+  },
+  chartContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  chartTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 16,
+  },
+  placeholderChart: {
+    height: 200,
+    backgroundColor: "#FFF8E1",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  insightsContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  insightsTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 16,
+  },
+  placeholderInsights: {
+    padding: 16,
+    backgroundColor: "#FFF8E1",
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
