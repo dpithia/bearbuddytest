@@ -188,10 +188,13 @@ export default function BuddyScreen() {
       });
 
       Alert.alert(
-        analysis.isHealthy ? "Healthy Food!" : "Snack Time!",
-        analysis.isHealthy
-          ? `That's a nutritious meal! ${buddyState.name} feels great and gained ${hpGain} HP!`
-          : `${buddyState.name} enjoyed that treat but it's not very nutritious. Gained ${hpGain} HP.`
+        analysis.isHealthy ? "Healthy Food! 🥗" : "Unhealthy Food! 🍔",
+        `I think this is: ${analysis.labels?.join(", ") || "unknown food"}\n\n${
+          analysis.isHealthy
+            ? `Great choice! ${buddyState.name} is happy about this healthy meal!`
+            : `${buddyState.name} would prefer something healthier next time!`
+        }`,
+        [{ text: "OK", onPress: () => console.log("OK Pressed") }]
       );
     } catch (error) {
       console.error("Error processing food image:", error);
